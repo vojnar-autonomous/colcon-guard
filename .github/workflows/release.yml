@@ -85,8 +85,13 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ needs.build.outputs.version }}
         run: |
+          flags=""
+          case "${VERSION}" in
+            *a[0-9]*|*b[0-9]*|*rc[0-9]*|*.dev[0-9]*) flags="--prerelease" ;;
+          esac
           gh release create "v${VERSION}" dist/* \
             --repo "${GITHUB_REPOSITORY}" \
             --target "${GITHUB_SHA}" \
             --title "v${VERSION}" \
-            --generate-notes
+            --generate-notes \
+            ${flags}
