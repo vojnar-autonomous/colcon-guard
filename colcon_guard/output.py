@@ -28,4 +28,5 @@ def say(message, level=None, details=()):
 def die(message, details=()):
     lines = [f'colcon-guard: error: {message}']
     lines += [f'  {line}' for line in details]
+    _logger.debug('\n'.join(lines))
     raise SystemExit('\n'.join(lines))
