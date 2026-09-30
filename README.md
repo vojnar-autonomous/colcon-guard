@@ -71,12 +71,17 @@ base_prefix = ["/opt/ros/jazzy"]
 ## `colcon guard status`
 
 ```
-colcon --log-base /dev/null guard status [--json]
+colcon --log-base /dev/null guard status [--install-base DIR] [--json]
 ```
+
+Prints whether a build/test holds the workspace lock and lists the layers in
+the current environment (highest priority first), each marked as `this
+workspace`, `overlay` (built on top of this workspace) or `underlay`.
 
 Exit code 0: free or never locked, 1: a build/test is running, 3: locking is not
 supported on this filesystem. Busy/free is decided by probing the lock, not by
 the metadata file, so a record left by a crashed build is reported as stale.
+`--json` reports only the lock state.
 
 ## Limitations
 

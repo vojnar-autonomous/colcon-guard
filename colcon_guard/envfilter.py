@@ -98,6 +98,20 @@ def _all_entries(env, variables):
             yield var, entry
 
 
+def environment_layers(env):
+    """Return prefix roots in the environment, highest priority first."""
+    layers = []
+    for entry in split_pathlist(env.get('AMENT_PREFIX_PATH', '')):
+        root = workspace_root_of(entry) or canon(entry)
+        if root not in layers:
+            layers.append(root)
+    colcon_only = []
+    for entry in split_pathlist(env.get('COLCON_PREFIX_PATH', '')):
+        root = canon(entry)
+        if root not in layers and root not in colcon_only:
+            colcon_only.append(root)
+    return colcon_only + layers
+
 def plan_drop_self(env, install_base):
     self_root = canon(install_base)
     plan = Plan(mode='drop-self-underlay')

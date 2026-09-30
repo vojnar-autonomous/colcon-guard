@@ -52,7 +52,10 @@ def test_baseline_plain_rebuild_closes_the_cycle(layered, sh):
 def test_plain_rebuild_warns_with_hint(layered, sh):
     a, b = layered
     result = ok(sh(a, 'colcon build', source=[b / 'install']))
-    assert 'colcon-guard: hint: did you miss --drop-self-underlay?' in result.stderr
+    err = result.stderr
+    assert 'colcon-guard: hint: did you miss --drop-self-underlay?' in err
+    assert 'overlay (built on top of this workspace)' in err
+    assert 'this workspace' in err
     assert chain(a) == [str(b / 'install')]
 
 
@@ -80,16 +83,16 @@ def test_drop_self_underlay_every_step_keeps_true_underlay(rig, sh):
     result = ok(sh(a, flag, source=[b / 'install']))
     assert chain(a) == []
     assert chain(b) == [str(a / 'install')]
-    assert 'dropping' in result.stderr
+    assert 'dropped' in result.stderr
 
 
 def test_building_the_upper_workspace_keeps_lower_one(layered, sh):
     a, b = layered
     result = ok(sh(b, 'colcon build --drop-self-underlay',
                    source=[b / 'install']))
-    guard_lines = [line for line in result.stderr.splitlines()
-                   if line.startswith('colcon-guard:')]
-    assert not any('ws_a' in line for line in guard_lines)
+    rows = [line.strip() for line in result.stderr.splitlines()
+            if line.strip().startswith('../ws_a/install')]
+    assert len(rows) == 1 and rows[0].endswith('kept')
     assert chain(b) == [str(a / 'install')]
 
 
@@ -107,7 +110,7 @@ def test_test_verb_uses_the_same_chain_handling(layered, sh):
     a, b = layered
     result = ok(sh(a, 'colcon test --drop-self-underlay',
                    source=[b / 'install']))
-    assert 'dropping' in result.stderr
+    assert 'dropped' in result.stderr
     result = ok(sh(a, 'colcon test', source=[b / 'install']))
     assert 'did you miss --drop-self-underlay?' in result.stderr
 
@@ -122,7 +125,8 @@ def test_clean_underlay_resets_to_base(layered, sh, tmp_path):
                    source=[b / 'install'],
                    env={'AMENT_PREFIX_PATH': str(base)}))
     assert chain(a) == []
-    assert 'clean-underlay - dropping' in result.stderr
+    assert 'clean-underlay - underlay set to' in result.stderr
+    assert 'kept (base install)' in result.stderr
     dump = build_env_dump(a, 'a_app')
     assert str(base) in dump['AMENT_PREFIX_PATH']
     assert str(b / 'install') not in dump['AMENT_PREFIX_PATH']
@@ -231,3 +235,27 @@ def test_other_verbs_are_not_guarded(rig, sh):
     result = ok(sh(a, 'colcon list'))
     assert 'colcon-guard' not in result.stderr
     assert not (a / '.colcon_guard.lock').exists()
+
+
+def test_self_only_warning_lists_only_own_layer(rig, sh):
+    a = rig / 'ws_a'
+    ok(sh(a, 'colcon build'))
+    result = ok(sh(a, 'colcon build', source=[a / 'install']))
+    assert 'layered on its own install' in result.stderr
+    assert 'install  this workspace' in result.stderr
+    assert 'overlay (' not in result.stderr
+
+
+def test_status_lists_environment_layers(layered, sh):
+    a, b = layered
+    result = ok(sh(a, 'colcon --log-base /dev/null guard status',
+                   source=[b / 'install']))
+    assert 'environment layers, highest priority first:' in result.stdout
+    rows = [' '.join(line.split()) for line in result.stdout.splitlines()]
+    assert '../ws_b/install overlay (built on top of this workspace)' in rows
+    assert 'install this workspace' in rows
+
+
+def test_status_without_layers(rig, sh):
+    result = ok(sh(rig / 'ws_a', 'colcon --log-base /dev/null guard status'))
+    assert 'environment layers: none' in result.stdout

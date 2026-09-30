@@ -103,21 +103,51 @@ def _resolve_base_prefixes(config, env):
     return bases
 
 
-def _report_plan(plan, changes, install_base):
-    own = envfilter.canon(install_base)
-    for root in plan.roots:
-        detail = ''
-        if plan.mode == 'drop-self-underlay' and root != own:
-            detail = f' ({plan.reasons[root]})'
-        say(f'{plan.mode} - dropping {display_path(root)}{detail}')
+def _apply(plan, env):
+    changes = envfilter.apply_plan(env, plan.roots)
+    logger.debug('env changes: %s', changes)
+
+
+def _layer_lines(layers, plan, own, *, acting, bases=()):
+    layers = [r for r in plan.roots if r not in layers] + list(layers)
+    names = [display_path(layer) for layer in layers]
+    width = max(map(len, names), default=0)
+    lines = []
+    for layer, name in zip(layers, names):
+        dropped = layer in plan.roots
+        if acting and dropped:
+            if plan.mode == 'clean-underlay':
+                status = 'dropped'
+            elif layer == own:
+                status = 'dropped (this workspace)'
+            else:
+                status = f'dropped ({plan.reasons[layer]})'
+        elif acting:
+            if any(envfilter.is_under(layer, b) for b in bases):
+                status = 'kept (base install)'
+            elif plan.mode == 'clean-underlay':
+                status = 'kept (not a colcon workspace)'
+            else:
+                status = 'kept'
+        elif layer == own:
+            status = 'this workspace'
+        elif dropped:
+            status = f'overlay ({plan.reasons[layer]})'
+        else:
+            status = 'underlay'
+        lines.append(f'{name.ljust(width)}  {status}')
+    return lines
+
+
+def _report_plan(plan, layers, own, bases=()):
+    if not plan.empty:
+        say(f'{plan.mode} - environment layers, highest priority first:',
+            details=_layer_lines(layers, plan, own, acting=True, bases=bases))
     if plan.cycles:
         names = ', '.join(display_path(c) for c in plan.cycles)
         say(f'this workspace and {names} chain each other; '
             'the cycle is cut', 'warning')
-    for kept in plan.kept:
-        say(f'{plan.mode} - keeping {display_path(kept)} '
-            '(not a colcon workspace)')
-    logger.debug('env changes: %s', changes)
+
 
 def run_guard(args):
     root = os.getcwd()
@@ -137,24 +167,33 @@ def run_guard(args):
         'broken_symlink_error')
 
     install_base = _install_base(args)
+    own = envfilter.canon(install_base)
+    layers = envfilter.environment_layers(env)
     if clean:
         if drop_self:
             say('--clean-underlay already covers --drop-self-underlay')
         bases = _resolve_base_prefixes(config, env)
         plan = envfilter.plan_clean(env, bases)
-        changes = envfilter.apply_plan(env, plan.roots)
-        _report_plan(plan, changes, install_base)
+        _apply(plan, env)
+        _report_plan(plan, layers, own, bases)
         say(f"clean-underlay - underlay set to {', '.join(bases)}")
     elif drop_self:
         plan = envfilter.plan_drop_self(env, install_base)
-        changes = envfilter.apply_plan(env, plan.roots)
-        _report_plan(plan, changes, install_base)
+        _apply(plan, env)
+        _report_plan(plan, layers, own)
     else:
         plan = envfilter.plan_drop_self(env, install_base)
         if not plan.empty:
-            shown = ', '.join(display_path(r) for r in plan.roots)
-            say(f'{verb} of this workspace would be layered on its own '
-                'install', 'warning', [f'in environment: {shown}'])
+            if own in plan.roots:
+                text = (f'{verb} of this workspace would be layered on '
+                        'its own install')
+            else:
+                text = (f'{verb} of this workspace would be layered on '
+                        'workspaces built on top of it')
+            rows = _layer_lines(layers, plan, own, acting=False)
+            say(text, 'warning',
+                ['environment layers, highest priority first:'] +
+                [f'  {row}' for row in rows])
             say('did you miss --drop-self-underlay?', 'hint')
 
     message = checks.check_distro(env, config.get('expected_distro'))

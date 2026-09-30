@@ -124,3 +124,23 @@ def test_clean_never_treats_system_prefixes_as_workspaces():
     assert plan.empty
     assert set(plan.kept) == {os.path.realpath('/usr'),
                               os.path.realpath('/usr/local')}
+
+def test_environment_layers_orders_and_collapses(tmp_path):
+    base, a, b = (tmp_path / n for n in ('base', 'a', 'b'))
+    base.mkdir()
+    write_colcon_setup(a, [])
+    write_colcon_setup(b, [str(a)])
+    env = {
+        'AMENT_PREFIX_PATH': os.pathsep.join(
+            [f'{b}/pkg1', f'{b}/pkg2', f'{a}/pkg3', str(base)]),
+        'COLCON_PREFIX_PATH': os.pathsep.join([str(b), str(a)]),
+    }
+    assert envfilter.environment_layers(env) == [str(b), str(a), str(base)]
+
+
+def test_environment_layers_puts_colcon_only_workspaces_first(tmp_path):
+    base, ws = tmp_path / 'base', tmp_path / 'ws'
+    base.mkdir()
+    write_colcon_setup(ws, [])
+    env = {'AMENT_PREFIX_PATH': str(base), 'COLCON_PREFIX_PATH': str(ws)}
+    assert envfilter.environment_layers(env) == [str(ws), str(base)]
