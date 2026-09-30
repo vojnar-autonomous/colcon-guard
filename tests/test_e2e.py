@@ -52,7 +52,7 @@ def test_baseline_plain_rebuild_closes_the_cycle(layered, sh):
 def test_plain_rebuild_warns_with_hint(layered, sh):
     a, b = layered
     result = ok(sh(a, 'colcon build', source=[b / 'install']))
-    assert 'did you miss --drop-self-underlay?' in result.stderr
+    assert 'colcon-guard: hint: did you miss --drop-self-underlay?' in result.stderr
     assert chain(a) == [str(b / 'install')]
 
 
@@ -89,7 +89,7 @@ def test_building_the_upper_workspace_keeps_lower_one(layered, sh):
                    source=[b / 'install']))
     guard_lines = [line for line in result.stderr.splitlines()
                    if line.startswith('colcon-guard:')]
-    assert not any(str(a / 'install') in line for line in guard_lines)
+    assert not any('ws_a' in line for line in guard_lines)
     assert chain(b) == [str(a / 'install')]
 
 
@@ -122,7 +122,7 @@ def test_clean_underlay_resets_to_base(layered, sh, tmp_path):
                    source=[b / 'install'],
                    env={'AMENT_PREFIX_PATH': str(base)}))
     assert chain(a) == []
-    assert 'clean-underlay: dropping' in result.stderr
+    assert 'clean-underlay - dropping' in result.stderr
     dump = build_env_dump(a, 'a_app')
     assert str(base) in dump['AMENT_PREFIX_PATH']
     assert str(b / 'install') not in dump['AMENT_PREFIX_PATH']

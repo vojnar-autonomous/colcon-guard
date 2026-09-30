@@ -121,7 +121,6 @@ def plan_drop_self(env, install_base):
                 plan.reasons[prefix] = 'built on top of this workspace'
                 if prefix in self_closure:
                     plan.cycles.append(prefix)
-                    plan.reasons[prefix] += ' (chain cycle)'
         elif self_idx is not None and idx < self_idx:
             plan.roots.append(prefix)
             plan.reasons[prefix] = (

@@ -13,13 +13,14 @@ from colcon_guard import envfilter
 from colcon_guard.config import CONFIG_NAME
 from colcon_guard.config import load_config
 from colcon_guard.config import resolve_flag
-from colcon_guard.lock import describe_holder
 from colcon_guard.lock import holder_info
+from colcon_guard.lock import holder_lines
 from colcon_guard.lock import LockUnsupported
 from colcon_guard.lock import unreliable_filesystem
 from colcon_guard.lock import WorkspaceBusy
 from colcon_guard.lock import WorkspaceLock
 from colcon_guard.output import die
+from colcon_guard.output import display_path
 from colcon_guard.output import say
 
 logger = colcon_logger.getChild(__name__)
@@ -77,8 +78,8 @@ def _acquire_lock(root, verb):
     try:
         lock.acquire(holder_info(verb))
     except WorkspaceBusy as e:
-        die(f'workspace {root} is already being built or tested elsewhere: '
-            f'{describe_holder(e.holder)}')
+        die('workspace is already being built or tested elsewhere',
+            holder_lines(e.holder))
     except LockUnsupported as e:
         say(f'cannot lock the workspace ({e}); concurrent builds are not '
             'guarded', 'warning')
@@ -97,21 +98,26 @@ def _resolve_base_prefixes(config, env):
             f'base_prefix in {CONFIG_NAME}')
     missing = [b for b in bases if not os.path.isdir(b)]
     if missing:
-        die(f"--clean-underlay: base prefix does not exist: {', '.join(missing)}")
+        die('--clean-underlay: base prefix does not exist: '
+            f"{', '.join(missing)}")
     return bases
 
 
-def _report_plan(plan, changes):
+def _report_plan(plan, changes, install_base):
+    own = envfilter.canon(install_base)
     for root in plan.roots:
-        say(f'{plan.mode}: dropping {root} ({plan.reasons[root]})')
+        detail = ''
+        if plan.mode == 'drop-self-underlay' and root != own:
+            detail = f' ({plan.reasons[root]})'
+        say(f'{plan.mode} - dropping {display_path(root)}{detail}')
     if plan.cycles:
-        names = ', '.join(plan.cycles)
-        say(f'workspace and {names} chain each other; the cycle is cut',
-            'warning')
+        names = ', '.join(display_path(c) for c in plan.cycles)
+        say(f'this workspace and {names} chain each other; '
+            'the cycle is cut', 'warning')
     for kept in plan.kept:
-        say(f'{plan.mode}: keeping {kept} (not a colcon workspace)')
+        say(f'{plan.mode} - keeping {display_path(kept)} '
+            '(not a colcon workspace)')
     logger.debug('env changes: %s', changes)
-
 
 def run_guard(args):
     root = os.getcwd()
@@ -121,10 +127,10 @@ def run_guard(args):
 
     _acquire_lock(root, verb)
 
-    drop_self, drop_src = resolve_flag(
+    drop_self, _ = resolve_flag(
         getattr(args, 'guard_drop_self_underlay', None), config,
         'drop_self_underlay')
-    clean, clean_src = resolve_flag(
+    clean, _ = resolve_flag(
         getattr(args, 'guard_clean_underlay', None), config, 'clean_underlay')
     symlink_error, _ = resolve_flag(
         getattr(args, 'guard_broken_symlink_error', None), config,
@@ -134,20 +140,22 @@ def run_guard(args):
     if clean:
         if drop_self:
             say('--clean-underlay already covers --drop-self-underlay')
-        plan = envfilter.plan_clean(env, _resolve_base_prefixes(config, env))
+        bases = _resolve_base_prefixes(config, env)
+        plan = envfilter.plan_clean(env, bases)
         changes = envfilter.apply_plan(env, plan.roots)
-        _report_plan(plan, changes)
+        _report_plan(plan, changes, install_base)
+        say(f"clean-underlay - underlay set to {', '.join(bases)}")
     elif drop_self:
         plan = envfilter.plan_drop_self(env, install_base)
         changes = envfilter.apply_plan(env, plan.roots)
-        _report_plan(plan, changes)
+        _report_plan(plan, changes, install_base)
     else:
         plan = envfilter.plan_drop_self(env, install_base)
         if not plan.empty:
-            names = ', '.join(plan.roots)
-            say(f'environment contains {names} ({verb} of this workspace '
-                'would be layered on its own install/overlays); did you '
-                'miss --drop-self-underlay?', 'warning')
+            shown = ', '.join(display_path(r) for r in plan.roots)
+            say(f'{verb} of this workspace would be layered on its own '
+                'install', 'warning', [f'in environment: {shown}'])
+            say('did you miss --drop-self-underlay?', 'hint')
 
     message = checks.check_distro(env, config.get('expected_distro'))
     if message:
@@ -156,8 +164,7 @@ def run_guard(args):
     base_paths = getattr(args, 'base_paths', None) or ['.']
     broken = checks.find_broken_symlinks(base_paths)
     if broken:
-        listing = '\n  '.join(broken)
-        text = f'broken symlinks in the workspace:\n  {listing}'
+        details = [display_path(path) for path in broken]
         if symlink_error:
-            die(text)
-        say(text, 'warning')
+            die('broken symlinks in the workspace', details)
+        say('broken symlinks in the workspace', 'warning', details)

@@ -7,7 +7,7 @@ import os
 from colcon_core.plugin_system import satisfies_version
 from colcon_core.verb import VerbExtensionPoint
 
-from colcon_guard.lock import describe_holder
+from colcon_guard.lock import holder_lines
 from colcon_guard.lock import lock_path
 from colcon_guard.lock import probe
 from colcon_guard.lock import unreliable_filesystem
@@ -41,9 +41,13 @@ class GuardVerb(VerbExtensionPoint):
             print(f'workspace: {root}')
             print(f'state: {state}')
             if state == 'busy':
-                print(f'holder: {describe_holder(holder)}')
+                print('holder:')
+                for line in holder_lines(holder):
+                    print(f'  {line}')
             elif state == 'free' and holder:
-                print(f'last holder (stale record): {describe_holder(holder)}')
+                print('last holder (stale record):')
+                for line in holder_lines(holder):
+                    print(f'  {line}')
             if fstype:
                 print(f'warning: {fstype} filesystem, locking may be '
                       'unreliable')

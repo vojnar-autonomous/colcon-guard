@@ -93,14 +93,14 @@ def read_holder(path):
     return data if isinstance(data, dict) else None
 
 
-def describe_holder(holder):
+def holder_lines(holder):
     if not holder:
-        return 'holder unknown (metadata not written yet or unreadable)'
-    return (
-        f"host={holder.get('hostname')} pid={holder.get('pid')} "
-        f"since={holder.get('started')} "
-        f"cmd={' '.join(holder.get('cmdline') or [])}")
-
+        return ['holder unknown (metadata not written yet or unreadable)']
+    return [
+        f"host:    {holder.get('hostname')}",
+        f"since:   {holder.get('started')}",
+        f"command: {' '.join(holder.get('cmdline') or [])}",
+    ]
 
 class WorkspaceLock:
 
