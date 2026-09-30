@@ -1,0 +1,7 @@
+__pycache__/
+*.egg-info/
+.pytest_cache/
+.colcon_guard.lock
+tests/rig_work/
+build/
+dist/
