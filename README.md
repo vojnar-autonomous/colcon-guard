@@ -1,4 +1,8 @@
 # colcon-guard
+[![CI](https://github.com/vojnar-autonomous/colcon-guard/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/vojnar-autonomous/colcon-guard/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/colcon-guard)](https://pypi.org/project/colcon-guard/)
+[![Python](https://img.shields.io/pypi/pyversions/colcon-guard)](https://pypi.org/project/colcon-guard/)
+[![License](https://img.shields.io/pypi/l/colcon-guard)](https://github.com/vojnar-autonomous/colcon-guard/blob/main/LICENSE)
 
 Extension for [colcon](https://colcon.readthedocs.io) that guards `colcon build`
 and `colcon test` against two failure modes of shared and layered workspaces:
@@ -10,6 +14,62 @@ and `colcon test` against two failure modes of shared and layered workspaces:
   several containers sharing a bind mount.
 
 It hooks into plain `colcon build` / `colcon test`; no wrapper command is needed.
+
+## Installation
+
+colcon-guard is a regular [colcon](https://colcon.readthedocs.io) extension.
+It has to be installed into the Python environment that runs `colcon`; colcon
+then finds it through its entry points and there is nothing to configure.
+
+It needs Python 3.9 or newer and runs on Linux (tested in CI on Ubuntu with
+ROS 2 Humble and Jazzy). Other POSIX systems should work but are untested.
+Windows is not supported, the workspace lock uses `fcntl`.
+
+### colcon installed with ROS 2 (apt)
+
+The ROS 2 instructions install colcon with `apt`
+(`python3-colcon-common-extensions`). That colcon runs on the system Python, so
+install colcon-guard for that interpreter:
+
+    PIP_BREAK_SYSTEM_PACKAGES=1 pip install --user colcon-guard
+
+The variable is needed on Ubuntu 24.04 (ROS 2 Jazzy), where pip otherwise
+refuses to install into the system Python, and is ignored by the older pip on
+Ubuntu 22.04 (ROS 2 Humble).
+
+In a container image:
+
+    RUN PIP_BREAK_SYSTEM_PACKAGES=1 pip install --no-cache-dir colcon-guard
+
+A virtual environment that contains only colcon-guard is not seen by this
+colcon, because colcon loads extensions from its own interpreter.
+
+### colcon installed with pip
+
+If colcon comes from PyPI, for example in a virtual environment or in CI,
+install both into the same environment:
+
+    python3 -m venv ~/colcon-venv
+    . ~/colcon-venv/bin/activate
+    pip install colcon-common-extensions colcon-guard
+
+### Verify and remove
+
+    colcon extensions | grep guard
+    colcon build --help | grep -A1 drop-self-underlay
+    colcon --log-base /dev/null guard status
+
+To remove it: `pip uninstall colcon-guard`.
+
+Releases before 0.1.0 are alpha.
+
+## Quick start
+
+    colcon build --drop-self-underlay    # never layer this workspace on its own install
+    colcon guard status
+
+Without the flag, colcon-guard still takes the workspace lock and warns when the
+environment already contains the workspace's own install.
 
 ## Checks
 
@@ -113,20 +173,30 @@ per-package command environment (`env -0` after sourcing dependencies) inherits.
 The hook acts only for the `build` and `test` verbs. `colcon guard status` is a
 regular `colcon_core.verb` extension.
 
-## Development
+## Testing
 
-```
-pip install -e .[test]
-pytest                      # unit tests + end-to-end tests
-pytest -m "not e2e"         # unit tests only
-```
+Every push and pull request runs the full test suite in
+[GitHub Actions](https://github.com/vojnar-autonomous/colcon-guard/actions/workflows/ci.yml):
 
-`tests/rig/` contains two workspaces of empty `ament_python` packages:
-`ws_a` (`a_core`, `a_app` depending on `a_core`) and `ws_b` (`b_app` depending
-on `a_app`, plus an override of `a_core`). The end-to-end tests copy the rig to
-a temporary directory and run the real `colcon` on it: layering, cycle repair in
-both `setup.sh` orderings, `test` verb, lock contention, lock release after
-`kill -9`, distro guard, symlinks, local config.
+- Python 3.9 to 3.13 with colcon from PyPI;
+- ROS 2 Humble and Jazzy containers with colcon from `apt`, including tests
+  against a real ROS installation;
+- a packaging job that builds the sdist and wheel, checks them with `twine` and
+  installs the wheel into a clean virtual environment.
+
+To run the tests locally:
+
+    pip install -e '.[test]'
+    pytest                      # unit tests + end-to-end tests
+    pytest -m "not e2e"         # unit tests only
+
+`tests/rig/` contains two workspaces of empty `ament_python` packages: `ws_a`
+(`a_core`, `a_app` depending on `a_core`) and `ws_b` (`b_app` depending on
+`a_app`, plus an override of `a_core`). The end-to-end tests copy the rig to a
+temporary directory and run the real `colcon` on it: layering, cycle repair in
+both `setup.sh` orderings, the `test` verb, lock contention, lock release after
+`kill -9`, the distro guard, symlinks and local configuration. Tests marked
+`ros` run only where a ROS 2 installation is found.
 
 ## License
 
